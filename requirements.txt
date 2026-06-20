@@ -1,6 +1,4 @@
 streamlit
 streamlit-webrtc
 opencv-python-headless
-numpy<2
-dlib-bin
-face-recognition
+face-recognition-models
