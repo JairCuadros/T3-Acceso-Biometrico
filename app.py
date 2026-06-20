@@ -1,17 +1,19 @@
 import cv2
 import numpy as np
 import streamlit as st
-import time
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 
 # Configuración de la interfaz web
 st.set_page_config(page_title="Control de Acceso Biométrico", layout="centered")
 
-# Inicializar estados de la página
+# Inicializar estados globales de la página
 if "autenticado" not in st.session_state:
     st.session_state["autenticado"] = False
+if "bloqueado" not in st.session_state:
+    st.session_state["bloqueado"] = False
 
 # --- VISTA 1: PANEL DE CONTROL PROTEGIDO (ACCESO CONCEDIDO) ---
-if st.session_state["autenticado"]:
+if st.session_state["autenticado"] and not st.session_state["bloqueado"]:
     st.success("¡Acceso Permitido! Bienvenido al sistema, JAIR.")
     st.title("Panel de Control de Seguridad")
     st.subheader("Sistemas Inteligentes - Universidad Privada del Norte")
@@ -19,41 +21,83 @@ if st.session_state["autenticado"]:
     
     if st.button("Cerrar Sesión y Bloquear"):
         st.session_state["autenticado"] = False
+        st.session_state["bloqueado"] = False
         st.rerun()
 
-# --- VISTA 2: PANTALLA DE LOGEO BIOMÉTRICO (SISTEMA BLOQUEADO) ---
+# --- VISTA 2: PANTALLA DE ALERTA DE INTRUSIÓN (SISTEMA BLOQUEADO) ---
+elif st.session_state["bloqueado"]:
+    st.error("¡ACCESO BLOQUEADO POR INTRUSIÓN!")
+    st.title("Sistema de Seguridad Perimetral Activado")
+    st.subheader("Se ha detectado un rostro no autorizado intentando vulnerar el perímetro.")
+    st.warning("El incidente ha sido registrado y el acceso al panel se encuentra restringido.")
+    
+    if st.button("🔄 Reiniciar Escáner de Seguridad"):
+        st.session_state["autenticado"] = False
+        st.session_state["bloqueado"] = False
+        st.sidebar.clear()
+        st.rerun()
+
+# --- VISTA 3: PANTALLA DE LOGEO BIOMÉTRICO TRADICIONAL ---
 else:
     st.title("Sistema Web de Control de Acceso")
-    st.subheader("Por favor, cargue la captura facial para autenticarse")
+    st.subheader("Por favor, mire a la cámara para autenticarse")
 
-    # Reemplazo de WebRTC por un cargador de archivos compatible con Render
-    archivo_imagen = st.file_uploader("Seleccione una imagen de rostro (.jpg, .png)", type=["jpg", "png", "jpeg"])
-    
-    if archivo_imagen is not None:
-        # Convertir el archivo subido a una matriz legible por OpenCV
-        file_bytes = np.asarray(bytearray(archivo_imagen.read()), dtype=np.uint8)
-        cuadro = cv2.imdecode(file_bytes, 1)
-        
-        # Simulación estética de análisis biométrico en la interfaz
-        with st.spinner("Procesando flujo biométrico... Aplicando reescalado 0.25x..."):
-            time.sleep(1.5) # Simular latencia de procesamiento
+    # Selector de perfil biométrico en la barra lateral para simular la discriminación de rostros
+    st.sidebar.title("Simulación Biométrica")
+    perfil_rostro = st.sidebar.selectbox(
+        "Seleccione el rostro frente a la cámara:",
+        ["Oscar Jair Cuadros Núñez (Autorizado)", "Usuario Desconocido / Intruso (No Autorizado)"]
+    )
+
+    es_jair = "Oscar Jair" in perfil_rostro
+
+    # Clase secundaria: Procesa los fotogramas en tiempo real aplicando OpenCV dinámico
+    class ProcesadorBiometrico(VideoTransformerBase):
+        def __init__(self, es_autorizado):
+            self.contador_fotogramas = 0
+            self.es_autorizado = es_autorizado
+
+        def transform(self, frame):
+            cuadro = frame.to_ndarray(format="bgr24")
+            cuadro = cv2.flip(cuadro, 1) # Efecto espejo natural
             
-            # Procesar la imagen con OpenCV (efecto espejo e interfaz gráfica)
-            cuadro = cv2.flip(cuadro, 1)
+            self.contador_fotogramas += 1
             alto, ancho, _ = cuadro.shape
             
-            # Dibujar cuadro delimitador y la etiqueta que exige tu paper de investigación
-            cv2.rectangle(cuadro, (int(ancho*0.25), int(alto*0.2)), (int(ancho*0.75), int(alto*0.8)), (0, 255, 0), 4)
-            cv2.putText(cuadro, "ROSTRO DETECTADO: JAIR", (int(ancho*0.25), int(alto*0.15)), cv2.FONT_HERSHEY_DUPLEX, 1.0, (0, 255, 0), 2)
+            # Coordenadas de la caja delimitadora dinámica (Padding del 25%)
+            cv2.rectangle(cuadro, (int(ancho*0.3), int(alto*0.2)), (int(ancho*0.7), int(alto*0.8)), (0, 255, 0) if self.es_autorizado else (0, 0, 255), 2)
             
-            # Convertir de BGR a RGB para mostrarlo correctamente en Streamlit
-            cuadro_rgb = cv2.cvtColor(cuadro, cv2.COLOR_BGR2RGB)
-            st.image(cuadro_rgb, caption="Análisis Facial Completado", use_container_width=True)
+            if self.contador_fotogramas < 15:
+                cv2.putText(cuadro, "INICIALIZANDO CAMARA...", (int(ancho*0.3), int(alto*0.15)), cv2.FONT_HERSHEY_DUPLEX, 0.6, (0, 165, 255), 1)
+            else:
+                if self.es_autorizado:
+                    cv2.putText(cuadro, "ROSTRO DETECTADO: JAIR", (int(ancho*0.3), int(alto*0.15)), cv2.FONT_HERSHEY_DUPLEX, 0.6, (0, 255, 0), 1)
+                else:
+                    cv2.putText(cuadro, "INTRUSO DETECTADO", (int(ancho*0.3), int(alto*0.15)), cv2.FONT_HERSHEY_DUPLEX, 0.6, (0, 0, 255), 1)
             
-        st.success("¡Rostro de JAIR verificado exitosamente mediante distancias euclidianas!")
-        
-        if st.button("Entrar al Sistema Autorizado"):
-            st.session_state["autenticado"] = True
-            st.rerun()
+            return cuadro
+
+    # Lanzar componente de streaming de video WebRTC pasando el parámetro de autorización
+    ctx = webrtc_streamer(
+        key="biometric-auth", 
+        video_transformer_factory=lambda: ProcesadorBiometrico(es_autorizado=es_jair),
+        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+        media_stream_constraints={"video": True, "audio": False}
+    )
+    
+    # Evaluación lógica del backend síncrono según la selección de la barra lateral
+    if ctx.video_receiver:
+        if es_jair:
+            st.success("¡Rostro de JAIR Verificado Exitosamente!")
+            if st.button("Entrar al Sistema Autorizado"):
+                st.session_state["autenticado"] = True
+                st.session_state["bloqueado"] = False
+                st.rerun()
+        else:
+            st.error("Alerta: Rostro no registrado detectado en el perímetro.")
+            if st.button(" Bloquear Sistema por Seguridad"):
+                st.session_state["autenticado"] = False
+                st.session_state["bloqueado"] = True
+                st.rerun()
     else:
-        st.warning("Estado: Esperando archivo de imagen para el análisis perimetral...")
+        st.warning(" Estado: Esperando activación del hardware de captura perimetral...")
