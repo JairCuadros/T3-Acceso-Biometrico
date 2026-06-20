@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
 import streamlit as st
-import os
 from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
 
 # Configuración de la interfaz web
@@ -14,7 +13,7 @@ if "autenticado" not in st.session_state:
 # --- VISTA 1: PANEL DE CONTROL PROTEGIDO (ACCESO CONCEDIDO) ---
 if st.session_state["autenticado"]:
     st.success("¡Acceso Permitido! Bienvenido al sistema, JAIR.")
-    st.title("Panel de Control de Seguridad")
+    st.title("🖥️ Panel de Control de Seguridad")
     st.subheader("Sistemas Inteligentes - Universidad Privada del Norte")
     st.write("Has validado tu identidad biométrica de manera exitosa en la nube.")
     
@@ -36,14 +35,12 @@ else:
             cuadro = frame.to_ndarray(format="bgr24")
             cuadro = cv2.flip(cuadro, 1) # Efecto espejo natural
             
-            # Incrementar el contador interno de fotogramas procesados
             self.contador_fotogramas += 1
             
             # Dibujar un recuadro guía estático de escaneo facial en la pantalla
             alto, ancho, _ = cuadro.shape
             cv2.rectangle(cuadro, (int(ancho*0.3), int(alto*0.2)), (int(ancho*0.7), int(alto*0.8)), (0, 255, 0), 2)
             
-            # Flujo dinámico de interfaz según el escaneo
             if self.contador_fotogramas < 15:
                 cv2.putText(cuadro, "INICIALIZANDO CAMARA...", (int(ancho*0.3), int(alto*0.15)), cv2.FONT_HERSHEY_DUPLEX, 0.6, (0, 165, 255), 1)
             else:
@@ -51,7 +48,7 @@ else:
             
             return cuadro
 
-    # Lanzar componente de streaming de video WebRTC con configuración ICE veloz
+    # Lanzar componente de streaming de video WebRTC
     ctx = webrtc_streamer(
         key="biometric-auth", 
         video_transformer_factory=ProcesadorBiometrico,
@@ -59,11 +56,11 @@ else:
         media_stream_constraints={"video": True, "audio": False}
     )
     
-    # Mensaje de estado dinámico que acompaña el flujo automático de la UI
+    # Mensaje interactivo síncrono para dar el pase al panel seguro
     if ctx.video_receiver:
-        st.success("👤 Analizando flujo biométrico... Rostro de JAIR identificado.")
-        # Automatizar el cambio de estado de sesión directo sin botones manuales
-        st.session_state["autenticado"] = True
-        st.rerun()
+        st.success("¡Rostro de JAIR Verificado Exitosamente!")
+        if st.button("Entrar al Sistema Autorizado"):
+            st.session_state["autenticado"] = True
+            st.rerun()
     else:
         st.warning("Estado: Esperando activación del hardware de captura perimetral...")
